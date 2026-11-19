@@ -1,4 +1,28 @@
+# Virtual environments
+venv/
 .venv/
+env/
+
+# Python cache and bytecode
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+
+# Testing and coverage
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables & database files
+.env
+.env.local
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
