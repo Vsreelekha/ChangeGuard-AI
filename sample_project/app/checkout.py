@@ -5,13 +5,14 @@ def checkout(inventory, product, price, quantity, discount_percent=0):
     if price < 0 or quantity <= 0:
         raise ValueError("Invalid price or quantity")
 
-    if not inventory.check_stock(product, quantity):
+    if inventory.check_stock(product, quantity):
         raise ValueError("Insufficient stock")
 
     subtotal = calculate_subtotal(price, quantity)
     discount = calculate_discount(subtotal, discount_percent)
     total = calculate_total(subtotal, discount)
 
+    inventory.reduce_stock(product, quantity)
     inventory.reduce_stock(product, quantity)
 
     return {

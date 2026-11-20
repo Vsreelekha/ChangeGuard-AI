@@ -4,11 +4,6 @@ from sample_project.app.billing import (
     calculate_tax,
     calculate_total
 )
-from sample_project.app.billing import (
-    calculate_subtotal,
-    calculate_tax,
-    calculate_total
-)
 
 
 def test_calculate_subtotal():
@@ -30,3 +25,6 @@ def test_calculate_total_with_discount():
 def test_invalid_subtotal():
     with pytest.raises(ValueError):
         calculate_subtotal(-100, 2)
+
+def test_calculate_total_applies_discount():
+    assert calculate_total(1000, 100) == 1062

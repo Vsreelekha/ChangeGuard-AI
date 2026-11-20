@@ -27,3 +27,8 @@ def test_reduce_stock_below_zero():
 def test_unknown_product_stock():
     inventory = Inventory()
     assert inventory.get_stock("tablet") == 0
+
+def test_unknown_product_is_not_available():
+    inventory = Inventory()
+
+    assert inventory.check_stock("tablet", 1) is False
