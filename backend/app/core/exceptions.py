@@ -51,6 +51,12 @@ class TestExecutionError(ChangeGuardException):
         super().__init__(message=message, status_code=500, details=details)
 
 
+class TestExecutionTimeoutError(TestExecutionError):
+    """Raised when Dockerized pytest exceeds its configured time limit."""
+
+    __test__ = False
+
+
 class ReportNotFoundError(ChangeGuardException):
     """Raised when requested report is not found in the database."""
 

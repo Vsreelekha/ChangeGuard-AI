@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from app.schemas.analysis import AnalysisRequest, AnalysisResponse
 from app.services.analyzer_service import AnalyzerService
+from app.services.project_path_service import discover_python_source_files
 from app.core.logging_config import logger
 
 router = APIRouter(prefix="/analysis", tags=["Code Change Analysis"])
@@ -31,4 +32,5 @@ def analyze_code_change(
     service: AnalyzerService = Depends(get_analyzer_service),
 ) -> AnalysisResponse:
     logger.info("Received request on POST /api/v1/analysis")
-    return service.analyze_git_diff(payload.git_diff)
+    source_files = discover_python_source_files(payload.project_path)
+    return service.analyze_git_diff(payload.git_diff, source_files)

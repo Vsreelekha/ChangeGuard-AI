@@ -207,6 +207,7 @@ def _build_test_execution_section(
         "summary": {
             "passed": summary.get("passed", 0),
             "failed": summary.get("failed", 0),
+            "errors": summary.get("errors", 0),
             "skipped": summary.get("skipped", 0),
             "total": summary.get("total", 0)
         },

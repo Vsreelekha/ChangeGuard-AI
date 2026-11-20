@@ -90,6 +90,7 @@ def calculate_risk_score(
                 "selected_test_count": 0,
                 "uncovered_changed_function_count": 0,
                 "failed_test_count": 0,
+                "execution_error_count": 0,
                 "skipped_test_count": 0
             },
             "safety_overrides": ["Input data missing or malformed; uncertainty reported."],
@@ -193,41 +194,53 @@ def calculate_risk_score(
     failed_count = exec_summary.get("failed", 0)
     passed_count = exec_summary.get("passed", 0)
     skipped_count = exec_summary.get("skipped", 0)
+    error_count = exec_summary.get("errors", 0)
     total_executed = exec_summary.get("total", 0)
     exec_status = str(execution_result.get("status", "")).strip().lower()
 
-    if exec_status in ("timeout", "error") or execution_result.get("exit_code") == -1:
+    has_selected_tests = total_selected_tests > 0
+    complete_pass = (
+        impact_report.get("success") is True
+        and selection_result.get("success") is True
+        and exec_status == "passed"
+        and execution_result.get("exit_code") in (None, 0)
+        and execution_result.get("success", True) is True
+        and has_selected_tests
+        and passed_count > 0
+        and passed_count >= total_selected_tests
+        and passed_count == total_executed
+        and failed_count == 0
+        and skipped_count == 0
+        and error_count == 0
+    )
+
+    if exec_status == "timeout":
         pts_section_c = 40
-        exec_explanation = f"Test execution encountered {exec_status.upper()} (+40 pts)"
-        verification_status = exec_status.upper()
+        exec_explanation = "Test execution timed out (+40 pts)"
+        verification_status = "TIMEOUT"
+    elif exec_status == "error" or error_count > 0 or execution_result.get("exit_code") == -1:
+        pts_section_c = 40
+        exec_explanation = "Test execution encountered an error (+40 pts)"
+        verification_status = "ERROR"
     elif exec_status == "failed" or failed_count > 0:
         pts_section_c = 35
         exec_explanation = f"Test execution failed: {failed_count} test(s) failed (+35 pts)"
         verification_status = "FAILED"
-    elif exec_status == "skipped" or (total_executed == 0 and total_selected_tests == 0) or (passed_count == 0 and skipped_count > 0):
-        # Do not treat skipped or zero-execution as passing
+    elif exec_status == "skipped" or skipped_count > 0 or not has_selected_tests:
         pts_section_c = 10
-        exec_explanation = f"Test execution skipped: 0 tests verified (+10 pts)"
+        exec_explanation = f"Test execution incomplete: {skipped_count} skipped, {passed_count} passed (+10 pts)"
         verification_status = "SKIPPED"
-    elif exec_status == "passed":
-        # Rule: If execution status is passed, verify execution summary has zero failures
-        if failed_count > 0:
-            pts_section_c = 35
-            exec_explanation = f"Execution reported passed but had {failed_count} failure(s) (+35 pts)"
-            verification_status = "FAILED"
-        elif passed_count > 0:
-            pts_section_c = 0
-            exec_explanation = f"All {passed_count} selected test(s) passed successfully (+0 pts)"
-            verification_status = "VERIFIED"
-        else:
-            # Passed with 0 executed tests: do not treat as passed
-            pts_section_c = 10
-            exec_explanation = "Zero tests were executed (+10 pts)"
-            verification_status = "UNVERIFIED"
-    else:
-        # Missing or unknown execution status
+    elif total_executed == 0:
         pts_section_c = 10
-        exec_explanation = f"Unverified execution status '{exec_status}' (+10 pts)"
+        exec_explanation = "Zero tests were executed (+10 pts)"
+        verification_status = "UNVERIFIED"
+    elif complete_pass:
+        pts_section_c = 0
+        exec_explanation = f"All {passed_count} executed test(s) passed successfully (+0 pts)"
+        verification_status = "VERIFIED"
+    else:
+        pts_section_c = 10
+        exec_explanation = f"Execution status '{exec_status}' lacks complete passing evidence (+10 pts)"
         verification_status = "UNVERIFIED"
 
     # -------------------------------------------------------------------------
@@ -277,7 +290,18 @@ def calculate_risk_score(
     # -------------------------------------------------------------------------
     # 7. Actionable Recommendations
     # -------------------------------------------------------------------------
-    if level == "HIGH":
+    if verification_status == "TIMEOUT":
+        recommendation = "INSUFFICIENT TEST EVIDENCE — do not treat this run as verified. Pytest timed out."
+    elif verification_status == "ERROR":
+        recommendation = "INSUFFICIENT TEST EVIDENCE — do not treat this run as verified. Test execution encountered an error."
+    elif verification_status == "FAILED":
+        recommendation = "DO NOT DEPLOY: Regression tests failed. Fix the failures before proceeding."
+    elif verification_status != "VERIFIED":
+        if level == "HIGH":
+            recommendation = "DO NOT DEPLOY: INSUFFICIENT TEST EVIDENCE — do not treat this run as verified."
+        else:
+            recommendation = "INSUFFICIENT TEST EVIDENCE — do not treat this run as verified."
+    elif level == "HIGH":
         if failed_count > 0 or exec_status in ("failed", "timeout", "error"):
             recommendation = "DO NOT DEPLOY: Regressions or test execution failures detected. Fix all failing tests before proceeding."
         else:
@@ -348,6 +372,7 @@ def calculate_risk_score(
         "selected_test_count": total_selected_tests,
         "uncovered_changed_function_count": len(uncovered_changed_funcs),
         "failed_test_count": failed_count,
+        "execution_error_count": error_count,
         "skipped_test_count": skipped_count
     }
 

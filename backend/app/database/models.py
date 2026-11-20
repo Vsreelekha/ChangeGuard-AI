@@ -20,6 +20,8 @@ class AnalysisRun(Base):
     # Test selection and execution results
     selected_tests = Column(JSON, nullable=False, default=list)
     test_results = Column(JSON, nullable=True)
+    impact_analysis = Column(JSON, nullable=True)
+    workflow_report = Column(JSON, nullable=True)
 
     # Risk evaluation and recommendations
     risk_level = Column(String(20), nullable=False, default="LOW")
@@ -47,6 +49,8 @@ class AnalysisRun(Base):
                 "failed": 0,
                 "failures": [],
             },
+            "impact_analysis": self.impact_analysis or {},
+            "workflow_report": self.workflow_report or {},
             "recommendations": self.recommendations or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

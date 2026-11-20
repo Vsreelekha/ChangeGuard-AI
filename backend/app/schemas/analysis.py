@@ -1,23 +1,13 @@
-from typing import List
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field, field_validator
 
 
 class AnalysisRequest(BaseModel):
-    """Payload containing raw Git diff for impact analysis."""
+    """Git diff and approved project directory to analyze."""
 
-    git_diff: str = Field(
-        ...,
-        description="Raw unified Git diff string representing the code changes",
-        examples=[
-            """diff --git a/billing.py b/billing.py
---- a/billing.py
-+++ b/billing.py
-@@ -10,3 +10,3 @@
--def calculate_total(items):
-+def calculate_total(items, discount=0.0):
-     return sum(items) - discount"""
-        ],
-    )
+    git_diff: str = Field(..., description="Raw unified Git diff string representing the code changes")
+    project_path: str = Field(..., description="Path to a project inside configured approved roots")
 
     @field_validator("git_diff")
     @classmethod
@@ -26,22 +16,22 @@ class AnalysisRequest(BaseModel):
             raise ValueError("Git diff cannot be empty or contain only whitespace.")
         return value.strip()
 
+    @field_validator("project_path")
+    @classmethod
+    def validate_project_path(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean or "\x00" in clean:
+            raise ValueError("Project path must be a non-empty valid path.")
+        return clean
+
 
 class AnalysisResponse(BaseModel):
-    """Structured code change impact analysis results."""
+    """Complete structured output of ``analyze_code_impact``."""
 
-    changed_functions: List[str] = Field(
-        ...,
-        description="Functions directly modified in the Git diff",
-        examples=[["calculate_total"]],
-    )
-    impacted_functions: List[str] = Field(
-        ...,
-        description="Downstream and caller functions affected by the change",
-        examples=[["calculate_total", "checkout"]],
-    )
-    impacted_modules: List[str] = Field(
-        ...,
-        description="Source code modules affected by the change",
-        examples=[["billing.py", "checkout.py"]],
-    )
+    success: bool
+    changed_files: List[Dict[str, Any]]
+    changed_functions: List[Dict[str, Any]]
+    impacted_functions: List[Dict[str, Any]]
+    unassigned_changed_lines: List[Dict[str, Any]]
+    errors: List[Dict[str, Any]]
+    summary: Dict[str, Any]

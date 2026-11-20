@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     DOCKER_MEMORY_LIMIT: str = "512m"
     DOCKER_CPU_LIMIT: float = 1.0
     DOCKER_PIDS_LIMIT: int = 100
-    APPROVED_PROJECT_ROOTS: List[str] = ["."]
+    # Must be explicitly configured as a JSON list of absolute directory paths.
+    APPROVED_PROJECT_ROOTS: List[str] = []
 
     # Integration flags / settings
     ANALYZER_MODULE_ENABLED: bool = True

@@ -342,6 +342,64 @@ class TestEdgeCasesAndSafetyRules:
         exec_factor = next(f for f in result["factors"] if f["name"] == "Test Execution")
         assert exec_factor["points"] == 10
 
+    def test_no_tests_selected_cannot_recommend_safe_deploy(self):
+        result = calculate_risk_score(
+            _make_impact(changed_funcs=[]),
+            _make_selection(selected_tests=[]),
+            _make_execution(status="skipped", passed=0, skipped=0),
+        )
+        assert result["verification_status"] == "SKIPPED"
+        assert "INSUFFICIENT TEST EVIDENCE" in result["recommendation"]
+        assert "SAFE TO DEPLOY" not in result["recommendation"]
+
+    def test_all_tests_skipped_cannot_be_verified(self):
+        result = calculate_risk_score(
+            _make_impact(changed_funcs=[]),
+            _make_selection(selected_tests=[{"test_id": "tests/test_x.py::test_x", "target_functions": []}]),
+            _make_execution(status="skipped", passed=0, skipped=1),
+        )
+        assert result["verification_status"] == "SKIPPED"
+        assert "INSUFFICIENT TEST EVIDENCE" in result["recommendation"]
+
+    def test_some_passed_and_some_skipped_cannot_be_verified(self):
+        result = calculate_risk_score(
+            _make_impact(changed_funcs=[]),
+            _make_selection(selected_tests=[{"test_id": "tests/test_x.py::test_x", "target_functions": []}]),
+            _make_execution(status="passed", passed=1, skipped=1),
+        )
+        assert result["verification_status"] == "SKIPPED"
+        assert "INSUFFICIENT TEST EVIDENCE" in result["recommendation"]
+
+    def test_not_all_selected_tests_completed_cannot_be_verified(self):
+        selection = _make_selection(selected_tests=[
+            {"test_id": "tests/test_x.py::test_one", "target_functions": []},
+            {"test_id": "tests/test_x.py::test_two", "target_functions": []},
+        ])
+        execution = _make_execution(status="passed", passed=1)
+        result = calculate_risk_score(_make_impact(changed_funcs=[]), selection, execution)
+        assert result["verification_status"] == "UNVERIFIED"
+        assert "INSUFFICIENT TEST EVIDENCE" in result["recommendation"]
+
+    def test_nonzero_exit_code_cannot_be_verified_even_if_counts_claim_pass(self):
+        execution = _make_execution(status="passed", passed=1)
+        execution["exit_code"] = 1
+        result = calculate_risk_score(
+            _make_impact(changed_funcs=[]),
+            _make_selection(selected_tests=[{"test_id": "tests/test_x.py::test_x", "target_functions": []}]),
+            execution,
+        )
+        assert result["verification_status"] == "UNVERIFIED"
+
+    @pytest.mark.parametrize("status,expected", [("error", "ERROR"), ("timeout", "TIMEOUT")])
+    def test_execution_error_and_timeout_are_distinct_and_unverified(self, status, expected):
+        result = calculate_risk_score(
+            _make_impact(changed_funcs=[]),
+            _make_selection(selected_tests=[{"test_id": "tests/test_x.py::test_x", "target_functions": []}]),
+            _make_execution(status=status, passed=0, failed=0, skipped=0, exit_code=-1),
+        )
+        assert result["verification_status"] == expected
+        assert "INSUFFICIENT TEST EVIDENCE" in result["recommendation"]
+
     def test_status_passed_with_failures_not_trusted(self):
         """Verify status='passed' with failed > 0 is treated as failed."""
         impact = _make_impact(

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -15,6 +15,7 @@ class TestSummary(BaseModel):
     total_tests: int = Field(default=0, description="Total executed tests", examples=[5])
     passed: int = Field(default=0, description="Passed tests count", examples=[4])
     failed: int = Field(default=0, description="Failed tests count", examples=[1])
+    errors: int = Field(default=0, description="Pytest collection or setup errors", examples=[0])
     failures: List[str] = Field(
         default_factory=list,
         description="Failing test identifiers",
@@ -26,12 +27,15 @@ class ReportCreateRequest(BaseModel):
     """Payload to generate and persist a new risk evaluation report."""
 
     git_diff: Optional[str] = Field(default=None, description="Raw Git diff string")
-    changed_functions: List[str] = Field(
+    impact_analysis: Optional[Dict[str, Any]] = Field(
+        default=None, description="Complete structured analyzer result"
+    )
+    changed_functions: List[Any] = Field(
         default_factory=list,
         description="Directly modified functions",
         examples=[["calculate_total"]],
     )
-    impacted_functions: List[str] = Field(
+    impacted_functions: List[Any] = Field(
         default_factory=list,
         description="Downstream impacted functions",
         examples=[["calculate_total", "checkout"]],
@@ -64,12 +68,12 @@ class ReportResponse(BaseModel):
         description="Calculated risk level: 'LOW', 'MEDIUM', or 'HIGH'",
         examples=["HIGH"],
     )
-    changed_functions: List[str] = Field(
+    changed_functions: List[Any] = Field(
         ...,
         description="List of modified functions",
         examples=[["calculate_total"]],
     )
-    impacted_functions: List[str] = Field(
+    impacted_functions: List[Any] = Field(
         ...,
         description="List of impacted functions",
         examples=[["calculate_total", "checkout"]],
@@ -92,6 +96,14 @@ class ReportResponse(BaseModel):
         default=None,
         description="ISO 8601 creation timestamp",
     )
+    impact_analysis: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Complete structured result from the code impact analyzer",
+    )
+    workflow_report: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Detailed selection, execution, risk, and evidence report",
+    )
 
 
 class WorkflowRunRequest(BaseModel):
@@ -110,9 +122,9 @@ class WorkflowRunRequest(BaseModel):
      return sum(items) - discount"""
         ],
     )
-    project_path: Optional[str] = Field(
-        default=None,
-        description="Path to approved sample project repository for test execution",
+    project_path: str = Field(
+        ...,
+        description="Path to a project inside configured approved roots",
     )
 
     @field_validator("git_diff")
@@ -121,3 +133,11 @@ class WorkflowRunRequest(BaseModel):
         if not value or not value.strip():
             raise ValueError("Git diff cannot be empty or contain only whitespace.")
         return value.strip()
+
+    @field_validator("project_path")
+    @classmethod
+    def validate_project_path(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean or "\x00" in clean:
+            raise ValueError("Project path must be a non-empty valid path.")
+        return clean

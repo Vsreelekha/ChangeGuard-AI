@@ -1,32 +1,31 @@
-from typing import Dict, List
-from app.integrations.analyzer_adapter import CodeAnalyzerAdapter
-from app.schemas.analysis import AnalysisResponse
+from typing import Any, Dict, List, Optional
+
+from app.core.exceptions import AnalyzerIntegrationError
 from app.core.logging_config import logger
+from app.integrations.analyzer_adapter import BaseAnalyzerAdapter, CodeAnalyzerAdapter
 
 
 class AnalyzerService:
     """Service handling code change impact analysis business logic."""
 
-    def __init__(self, adapter: CodeAnalyzerAdapter = None):
-        self.adapter = adapter or CodeAnalyzerAdapter()
+    def __init__(self, adapter: Optional[BaseAnalyzerAdapter] = None):
+        self.adapter = adapter if adapter is not None else CodeAnalyzerAdapter()
 
-    def analyze_git_diff(self, git_diff: str) -> AnalysisResponse:
-        """
-        Processes Git diff through the AST/NetworkX analyzer adapter.
-
-        Returns structured analysis response with changed functions,
-        impacted functions, and impacted modules.
-        """
+    def analyze_git_diff(self, git_diff: str, source_files: List[str]) -> Dict[str, Any]:
+        """Analyze a diff against supplied source files and return the full report."""
         logger.info("Starting code change impact analysis for provided Git diff...")
-        raw_result: Dict[str, List[str]] = self.adapter.analyze_diff(git_diff)
+        result = self.adapter.analyze_diff(git_diff, source_files)
 
-        response = AnalysisResponse(
-            changed_functions=raw_result.get("changed_functions", []),
-            impacted_functions=raw_result.get("impacted_functions", []),
-            impacted_modules=raw_result.get("impacted_modules", []),
-        )
+        if not result.get("success"):
+            raise AnalyzerIntegrationError(
+                "Code change impact analysis did not complete successfully.",
+                details=result,
+            )
+
+        summary = result.get("summary", {})
         logger.info(
-            f"Analysis complete: {len(response.changed_functions)} changed, "
-            f"{len(response.impacted_functions)} impacted functions."
+            "Analysis complete: %s changed, %s impacted functions.",
+            summary.get("changed_functions_count", len(result.get("changed_functions", []))),
+            summary.get("impacted_functions_count", len(result.get("impacted_functions", []))),
         )
-        return response
+        return result

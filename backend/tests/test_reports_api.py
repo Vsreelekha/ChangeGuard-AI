@@ -1,12 +1,17 @@
 from fastapi.testclient import TestClient
 from app.integrations.analyzer_adapter import CodeAnalyzerAdapter
-from app.integrations.selector_adapter import TestSelectorAdapter
+from app.core.exceptions import TestExecutionTimeoutError
 from app.services.test_runner_service import TestRunnerService
 
 
 def test_create_report_endpoint_high_risk(client: TestClient):
     """Report creation with failed tests must result in HIGH risk level."""
     payload = {
+        "impact_analysis": {
+            "success": True,
+            "changed_functions": [{"name": "calculate_total", "metadata": {"line": 12}}],
+            "summary": {"changed_functions_count": 1},
+        },
         "changed_functions": ["calculate_total"],
         "impacted_functions": ["calculate_total", "checkout"],
         "impacted_modules": ["billing.py", "checkout.py"],
@@ -32,6 +37,7 @@ def test_create_report_endpoint_high_risk(client: TestClient):
     get_data = get_res.json()
     assert get_data["run_id"] == run_id
     assert get_data["risk_level"] == "HIGH"
+    assert get_data["impact_analysis"]["changed_functions"][0]["metadata"]["line"] == 12
 
 
 def test_create_report_endpoint_low_risk(client: TestClient):
@@ -62,59 +68,122 @@ def test_get_report_not_found_returns_404(client: TestClient):
     assert "was not found" in data["error"]
 
 
-def test_full_workflow_run_endpoint(client: TestClient):
-    """Verifies complete end-to-end pipeline execution via POST /api/v1/runs."""
-    # 1. Setup mock analyzer
-    CodeAnalyzerAdapter.register_custom_analyzer(
-        lambda diff: {
-            "changed_functions": ["calculate_total"],
-            "impacted_functions": ["calculate_total", "checkout"],
-            "impacted_modules": ["billing.py", "checkout.py"],
+def test_full_workflow_run_endpoint(client: TestClient, tmp_path, monkeypatch):
+    """Runs analysis, real mapping/selection, mocked Docker execution, scoring, and persistence."""
+    from app.core.config import get_settings
+
+    project = tmp_path / "project"
+    tests_dir = project / "tests"
+    tests_dir.mkdir(parents=True)
+    app_file = project / "billing.py"
+    app_file.write_text("def calculate_total():\n    return 1\n", encoding="utf-8")
+    (tests_dir / "test_billing.py").write_text(
+        "from billing import calculate_total\n\ndef test_calculate_total():\n    assert calculate_total() == 1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(get_settings(), "APPROVED_PROJECT_ROOTS", [str(tmp_path)])
+
+    def mock_analyzer(diff, source_files):
+        assert str(app_file.resolve()) in source_files
+        return {
+            "success": True,
+            "changed_files": [{"file_path": "billing.py", "change_type": "modified"}],
+            "changed_functions": [{
+                "id": f"{app_file.resolve().as_posix()}:calculate_total",
+                "name": "calculate_total", "qualified_name": "calculate_total",
+                "file_path": app_file.resolve().as_posix(), "start_line": 1, "end_line": 2,
+                "function_type": "function", "changed_lines": [2], "nested": {"evidence": ["line 2"]},
+            }],
+            "impacted_functions": [], "unassigned_changed_lines": [], "errors": [],
+            "summary": {"changed_functions_count": 1},
         }
-    )
 
-    # 2. Setup mock selector
-    TestSelectorAdapter.register_custom_selector(
-        lambda funcs: [
-            {"test_name": "test_calculate_total", "reason": "Verifies billing", "priority": "high"}
-        ]
-    )
+    CodeAnalyzerAdapter.register_custom_analyzer(mock_analyzer)
 
-    # 3. Setup mock runner
-    TestRunnerService.register_custom_runner(
-        lambda path, tests: {
-            "total_tests": 2,
-            "passed": 2,
-            "failed": 0,
-            "failures": [],
-        }
-    )
+    def mock_runner(path, selected_tests):
+        assert selected_tests == ["tests/test_billing.py::test_calculate_total"]
+        return {"total_tests": 1, "passed": 1, "failed": 0, "failures": []}
 
-    payload = {
-        "git_diff": "diff --git a/billing.py b/billing.py\n+def calculate_total(): pass",
-        "project_path": ".",
-    }
-
-    response = client.post("/api/v1/runs", json=payload)
-    assert response.status_code == 201
+    TestRunnerService.register_custom_runner(mock_runner)
+    response = client.post("/api/v1/runs", json={
+        "git_diff": "diff --git a/billing.py b/billing.py\n+def calculate_total():",
+        "project_path": str(project),
+    })
+    assert response.status_code == 201, response.text
     data = response.json()
-    assert "run_id" in data
-    assert data["changed_functions"] == ["calculate_total"]
-    assert data["tests"]["passed"] == 2
-    assert data["tests"]["failed"] == 0
-    # Multi-module impact (billing.py & checkout.py) correctly evaluates to MEDIUM risk
-    assert data["risk_level"] == "MEDIUM"
+    assert data["impact_analysis"]["changed_functions"][0]["nested"]["evidence"] == ["line 2"]
+    assert data["workflow_report"]["risk"]["verification_status"] == "VERIFIED"
+    assert data["workflow_report"]["verification_success"] is True
+    assert data["tests"]["passed"] == 1
+    retrieved = client.get(f"/api/v1/reports/{data['run_id']}").json()
+    assert retrieved["impact_analysis"] == data["impact_analysis"]
+    assert retrieved["workflow_report"]["test_selection"]["selected_tests"][0]["test_name"] == "test_calculate_total"
 
 
-def test_full_workflow_stage_error_on_missing_analyzer(client: TestClient):
-    """Verifies that missing analyzer stops the pipeline with a stage-specific 503 error."""
-    CodeAnalyzerAdapter.register_custom_analyzer(None)
+def test_workflow_requires_project_path(client: TestClient):
+    response = client.post("/api/v1/runs", json={"git_diff": "diff --git a/a.py b/a.py"})
+    assert response.status_code == 422
 
-    payload = {
-        "git_diff": "diff --git a/test.py b/test.py\n+def foo(): pass",
-    }
 
-    response = client.post("/api/v1/runs", json=payload)
-    assert response.status_code == 503
+def test_workflow_empty_test_discovery_is_not_verified(client: TestClient, tmp_path, monkeypatch):
+    from app.core.config import get_settings
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(get_settings(), "APPROVED_PROJECT_ROOTS", [str(tmp_path)])
+    CodeAnalyzerAdapter.register_custom_analyzer(lambda diff, files: {
+        "success": True, "changed_files": [], "changed_functions": [], "impacted_functions": [],
+        "unassigned_changed_lines": [], "errors": [], "summary": {},
+    })
+    response = client.post("/api/v1/runs", json={"git_diff": "diff --git a/a.py b/a.py", "project_path": str(project)})
+    assert response.status_code == 201, response.text
     data = response.json()
-    assert "Code analyzer integration pending" in data["error"]
+    assert data["workflow_report"]["test_execution"]["status"] == "skipped"
+    assert data["workflow_report"]["verification_success"] is False
+
+
+def test_workflow_preserves_timeout_evidence(client: TestClient, tmp_path, monkeypatch):
+    from app.core.config import get_settings
+
+    project = tmp_path / "project"
+    tests_dir = project / "tests"
+    tests_dir.mkdir(parents=True)
+    app_file = project / "billing.py"
+    app_file.write_text("def calculate_total():\n    return 1\n", encoding="utf-8")
+    (tests_dir / "test_billing.py").write_text(
+        "from billing import calculate_total\n\ndef test_calculate_total():\n    assert calculate_total() == 1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(get_settings(), "APPROVED_PROJECT_ROOTS", [str(tmp_path)])
+    CodeAnalyzerAdapter.register_custom_analyzer(lambda diff, files: {
+        "success": True,
+        "changed_files": [{"file_path": "billing.py", "change_type": "modified"}],
+        "changed_functions": [{
+            "id": f"{app_file.resolve().as_posix()}:calculate_total",
+            "name": "calculate_total", "qualified_name": "calculate_total",
+            "file_path": app_file.resolve().as_posix(), "start_line": 1, "end_line": 2,
+            "function_type": "function", "changed_lines": [2],
+        }],
+        "impacted_functions": [], "unassigned_changed_lines": [], "errors": [], "summary": {},
+    })
+
+    def timeout_runner(*args, **kwargs):
+        raise TestExecutionTimeoutError(
+            "pytest timed out",
+            details={"stdout": "partial output", "stderr": "partial error", "execution_time": 12.5},
+        )
+
+    monkeypatch.setattr(TestRunnerService, "execute_tests", timeout_runner)
+    response = client.post("/api/v1/runs", json={
+        "git_diff": "diff --git a/billing.py b/billing.py\n+    return 2",
+        "project_path": str(project),
+    })
+
+    assert response.status_code == 201, response.text
+    report = response.json()["workflow_report"]
+    assert report["test_execution"]["status"] == "timeout"
+    assert report["test_execution"]["stdout"] == "partial output"
+    assert report["test_execution"]["stderr"] == "partial error"
+    assert report["test_execution"]["execution_time"] == 12.5
+    assert report["risk"]["verification_status"] == "TIMEOUT"
+    assert report["verification_success"] is False

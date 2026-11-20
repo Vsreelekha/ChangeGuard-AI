@@ -68,7 +68,7 @@ def get_report_endpoint(
         "Coordinates the complete pipeline from Git diff to final deployment risk assessment:\n"
         "1. Analyzes Git diff (identifying changed and impacted functions/modules).\n"
         "2. Selects relevant regression tests.\n"
-        "3. Executes selected tests safely in Docker (if project_path provided).\n"
+        "3. Executes selected tests safely in Docker when relevant tests are selected.\n"
         "4. Computes deterministic risk and actionable recommendations.\n"
         "5. Saves and returns the complete run record."
     ),

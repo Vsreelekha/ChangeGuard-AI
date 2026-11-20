@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Tuple
 from app.schemas.report import RiskLevel, TestSummary
 from app.core.logging_config import logger
+from reports.risk_scorer import calculate_risk_score
 
 
 class RiskService:
@@ -8,6 +9,15 @@ class RiskService:
     Evaluates change risk deterministically based on factual evidence from
     impacted code surface and regression test execution metrics.
     """
+
+    def calculate_structured_risk(
+        self,
+        impact_report: Dict[str, Any],
+        selection_result: Dict[str, Any],
+        execution_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Delegate structured scoring to the existing explainable risk scorer."""
+        return calculate_risk_score(impact_report, selection_result, execution_result)
 
     def calculate_risk(
         self,

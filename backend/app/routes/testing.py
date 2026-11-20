@@ -30,5 +30,5 @@ def select_tests_endpoint(
     payload: TestSelectionRequest,
     service: TestSelectorService = Depends(get_test_selector_service),
 ) -> TestSelectionResponse:
-    logger.info(f"Received request on POST /api/v1/tests/select with {len(payload.impacted_functions)} functions")
-    return service.select_tests(payload.impacted_functions)
+    logger.info("Received request on POST /api/v1/tests/select")
+    return service.select_tests_for_project(payload.impact_report, payload.project_path)
