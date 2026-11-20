@@ -1,0 +1,111 @@
+
+[
+  {
+    "bug_id": "BUG-001",
+    "title": "Incorrect discount calculation",
+    "file": "sample_project/app/discount.py",
+    "function": "calculate_discount",
+    "description": "Discount is divided by 10 instead of 100.",
+    "expected_behavior": "A 10 percent discount on 1000 should return 100.",
+    "actual_behavior": "A 10 percent discount on 1000 returns 1000.",
+    "affected_tests": [
+      "test_calculate_10_percent_discount",
+      "test_full_discount"
+    ],
+    "verification": {
+      "failed": 2,
+      "passed": 3
+    }
+  },
+  {
+    "bug_id": "BUG-002",
+    "title": "Double tax calculation",
+    "file": "sample_project/app/billing.py",
+    "function": "calculate_tax",
+    "description": "Tax is multiplied by 2, causing double the intended tax.",
+    "expected_behavior": "Tax on 100 should be 18.",
+    "actual_behavior": "Tax on 100 returns 36.",
+    "affected_tests": [
+      "test_calculate_tax",
+      "test_calculate_total_without_discount",
+      "test_calculate_total_with_discount"
+    ],
+    "verification": {
+      "failed": 3,
+      "passed": 2
+    }
+  },
+  {
+    "bug_id": "BUG-003",
+    "title": "Double inventory deduction",
+    "file": "sample_project/app/checkout.py",
+    "function": "checkout",
+    "description": "The checkout function deducts the purchased quantity from inventory twice.",
+    "expected_behavior": "Purchasing 2 laptops should reduce stock from 10 to 8.",
+    "actual_behavior": "Purchasing 2 laptops reduces stock from 10 to 6.",
+    "affected_tests": [
+      "test_checkout_deducts_stock_only_once"
+    ],
+    "verification": {
+      "failed": 1,
+      "passed": 2,
+      "other_existing_bug_failures": [
+        "test_successful_checkout",
+        "test_checkout_with_discount"
+      ],
+      "note": "BUG-003 was verified independently before BUG-004 was introduced. In the combined test run, BUG-004 prevents checkout from reaching the duplicate stock deduction."
+    }
+  },
+  {
+    "bug_id": "BUG-004",
+    "title": "Incorrect insufficient-stock validation",
+    "file": "sample_project/app/checkout.py",
+    "function": "checkout",
+    "description": "The stock validation condition is reversed, allowing checkout to proceed when stock is insufficient.",
+    "expected_behavior": "Checkout should raise ValueError when the requested quantity exceeds available stock.",
+    "actual_behavior": "Checkout continues when check_stock returns False.",
+    "affected_tests": [
+      "test_checkout_rejects_insufficient_stock_at_checkout_level"
+    ],
+    "verification": {
+      "failed": 1,
+      "reason": "DID NOT RAISE ValueError"
+    }
+  },
+  {
+    "bug_id": "BUG-005",
+    "title": "Discount ignored in final billing",
+    "file": "sample_project/app/billing.py",
+    "function": "calculate_total",
+    "description": "The final billing calculation uses the original subtotal instead of subtracting the discount before calculating tax.",
+    "expected_behavior": "A subtotal of 1000 with a discount of 100 should produce a total of 1062 at an 18 percent tax rate.",
+    "actual_behavior": "The discount is ignored. The current result is 1360 because the existing double-tax defect also affects the calculation.",
+    "affected_tests": [
+      "test_calculate_total_applies_discount"
+    ],
+    "verification": {
+      "failed": 1,
+      "expected": 1062,
+      "actual": 1360,
+      "other_existing_bug_contribution": "BUG-002"
+    }
+  },
+  {
+    "bug_id": "BUG-006",
+    "title": "Unknown products are incorrectly accepted",
+    "file": "sample_project/app/inventory.py",
+    "function": "check_stock",
+    "description": "The check_stock method returns True for products that do not exist in inventory.",
+    "expected_behavior": "Return False when the requested product is not present in inventory.",
+    "actual_behavior": "Returns True for an unknown product instead of False.",
+    "affected_tests": [
+      "test_unknown_product_is_not_available"
+    ],
+    "verification": {
+      "command": "python -m pytest sample_project\\tests\\test_inventory.py::test_unknown_product_is_not_available -v",
+      "result": "FAILED",
+      "failed": 1,
+      "passed": 0
+    }
+  }
+]

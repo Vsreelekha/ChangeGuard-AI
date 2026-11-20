@@ -1,3 +1,6 @@
+from sympy import product
+
+
 class Inventory:
     def __init__(self):
         self.stock = {
@@ -8,7 +11,7 @@ class Inventory:
 
     def check_stock(self, product, quantity):
         if product not in self.stock:
-            return False
+            return True
 
         return self.stock[product] >= quantity
 

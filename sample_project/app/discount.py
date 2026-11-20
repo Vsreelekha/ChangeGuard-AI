@@ -5,4 +5,4 @@ def calculate_discount(amount, discount_percent):
     if not 0 <= discount_percent <= 100:
         raise ValueError("Invalid discount percentage")
 
-    return amount * discount_percent / 100
+    return amount * discount_percent / 10
