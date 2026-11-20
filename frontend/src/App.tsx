@@ -1,122 +1,133 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import "./App.css";
+import { useState } from "react";
+
+import type { AnalysisResult, TestExecutionResult } from "./services/api";
+
+import Sidebar from "./components/Sidebar";
+import Header from "./components/Header";
+import DashboardOverview from "./components/DashboardOverview";
+import CodeSubmission from "./components/CodeSubmission";
+import TestSelectionPage from "./components/TestSelectionPage";
+import TestResultsPage from "./components/TestResultsPage";
+import RiskReportPage from "./components/RiskReportPage";
+import type { WorkflowStageStatus } from "./components/WorkflowStatus";
+import type { PageName } from "./components/Sidebar";
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [activePage, setActivePage] = useState<PageName>("Dashboard");
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
+    null,
+  );
+  const [executionResult, setExecutionResult] =
+    useState<TestExecutionResult | null>(null);
+  const [analysisStatus, setAnalysisStatus] =
+    useState<WorkflowStageStatus>("Pending");
+  const [selectionStatus, setSelectionStatus] =
+    useState<WorkflowStageStatus>("Pending");
+  const [executionStatus, setExecutionStatus] =
+    useState<WorkflowStageStatus>("Pending");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [riskStatus, setRiskStatus] = useState<WorkflowStageStatus>("Pending");
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
+    <div className="app-layout">
+      <button
+        className="mobile-menu-button"
+        onClick={() => setIsSidebarOpen((open) => !open)}
+        aria-label="Toggle navigation menu"
+        aria-expanded={isSidebarOpen}
+        aria-controls="primary-navigation"
+      >
+        ☰
+      </button>
+
+      <Sidebar
+        activePage={activePage}
+        setActivePage={(page: PageName) => {
+          setActivePage(page);
+          setIsSidebarOpen(false);
+        }}
+        isOpen={isSidebarOpen}
+      />
+      {isSidebarOpen && (
         <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+          className="sidebar-backdrop"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-label="Close navigation menu"
+        />
+      )}
 
-      <div className="ticks"></div>
+      <main className="main-content">
+        <Header activePage={activePage} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {activePage === "Dashboard" && (
+          <DashboardOverview
+            analysisResult={analysisResult}
+            executionResult={executionResult}
+            analysisStatus={analysisStatus}
+            selectionStatus={selectionStatus}
+            executionStatus={executionStatus}
+            riskStatus={riskStatus}
+          />
+        )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {activePage === "Code Analysis" && (
+          <div className="page-container">
+            <h1>Code Analysis</h1>
+            <p>Upload or paste your Git diff to analyze code changes.</p>
+
+            <CodeSubmission
+              onAnalysisComplete={(result) => {
+                setAnalysisResult(result);
+                setExecutionResult(null);
+                setAnalysisStatus(result ? "Completed" : "Pending");
+                setSelectionStatus("Pending");
+                setExecutionStatus("Pending");
+                setRiskStatus("Pending");
+              }}
+              onAnalysisStatusChange={(status) => {
+                setAnalysisStatus(status);
+
+                if (status === "In Progress") {
+                  setAnalysisResult(null);
+                  setExecutionResult(null);
+                  setSelectionStatus("Pending");
+                  setExecutionStatus("Pending");
+                  setRiskStatus("Pending");
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {activePage === "Test Selection" && (
+          <TestSelectionPage
+            analysisResult={analysisResult}
+            onSelectionStatusChange={setSelectionStatus}
+            onExecutionStatusChange={(status) => {
+              setExecutionStatus(status);
+              setRiskStatus(status === "Completed" ? "Completed" : "Pending");
+            }}
+            onExecutionComplete={(result) => {
+              setExecutionResult(result);
+              setRiskStatus(result ? "Completed" : "Pending");
+            }}
+          />
+        )}
+
+        {activePage === "Test Results" && (
+          <TestResultsPage result={executionResult} status={executionStatus} />
+        )}
+
+        {activePage === "Risk Report" && (
+          <RiskReportPage
+            executionResult={executionResult}
+            status={executionStatus}
+          />
+        )}
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
