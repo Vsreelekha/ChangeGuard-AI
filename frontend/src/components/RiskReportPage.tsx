@@ -1,119 +1,80 @@
-import type {
-  TestExecutionResult,
-  RiskAssessmentResult,
-} from "../services/api";
-import type { WorkflowStageStatus } from "./WorkflowStatus";
+import type { ReportResponse } from "../services/api";
+import WorkflowInProgress from "./WorkflowInProgress";
 
-type Props = {
-  executionResult: TestExecutionResult | null;
-  status: WorkflowStageStatus;
-};
+type Props = { report: ReportResponse | null; loading: boolean };
 
-function RiskReportPage({ executionResult, status }: Props) {
-  let risk: RiskAssessmentResult | null = null;
-
-  const passPercentage =
-    executionResult && executionResult.total_tests > 0
-      ? Math.round((executionResult.passed / executionResult.total_tests) * 100)
-      : null;
-
-  const riskScore =
-    executionResult && executionResult.total_tests > 0
-      ? Math.round((executionResult.failed / executionResult.total_tests) * 100)
-      : null;
-
-  if (executionResult && executionResult.total_tests > 0) {
-    const riskLevel =
-      executionResult.failed === 0
-        ? "Low"
-        : executionResult.failed / executionResult.total_tests >= 0.5
-          ? "High"
-          : "Medium";
-    risk = {
-      risk_level: riskLevel,
-      risk_reason:
-        executionResult.failed === 0
-          ? "All executed regression tests passed."
-          : `${executionResult.failed} of ${executionResult.total_tests} demo regression tests failed.`,
-      deployment_recommendation:
-        riskLevel === "Low" ? "Ready for review" : "Review required",
-    };
+function RiskReportPage({ report, loading }: Props) {
+  const workflow = report?.workflow_report;
+  const risk = workflow?.risk;
+  if (loading) {
+    return <section className="page-container risk-report-page"><h1>Risk Report</h1><WorkflowInProgress /></section>;
+  }
+  if (!workflow || !risk) {
+    return <section className="page-container risk-report-page"><h1>Risk Report</h1><div className="empty-state"><h2>Risk assessment unavailable</h2><p>Run the uploaded-project workflow to view its backend risk assessment.</p></div></section>;
   }
 
+  const level = risk.level.toLowerCase();
+  const verified = risk.verification_status === "VERIFIED" && workflow.verification_success;
+  const metricLabels: Record<keyof typeof risk.metrics, string> = {
+    changed_function_count: "Changed functions",
+    impacted_function_count: "Impacted functions",
+    direct_caller_count: "Direct callers",
+    transitive_caller_count: "Transitive callers",
+    unassigned_line_count: "Unassigned changed lines",
+    discovered_test_count: "Tests discovered",
+    selected_test_count: "Tests selected",
+    uncovered_changed_function_count: "Uncovered changed functions",
+    failed_test_count: "Tests failed",
+    execution_error_count: "Execution errors",
+    skipped_test_count: "Tests skipped",
+  };
   return (
     <section className="page-container risk-report-page">
       <h1>Risk Report</h1>
-
-      <p>Review the potential deployment risk based on test execution.</p>
-
-      <p className="demo-notice">
-        DEMO MODE — Risk is estimated locally from demo test results; this is not a deployment decision.
-      </p>
-
-      {status === "In Progress" ? (
-        <div className="loading-container" role="status" aria-live="polite">
-          <div className="spinner" aria-hidden="true"></div>
-          <p>Waiting for the demo test run to finish...</p>
-        </div>
-      ) : status === "Failed" ? (
-        <div className="error" role="alert">
-          <h2>Risk report unavailable</h2>
-          <p>The test run did not complete. Retry it from Test Selection.</p>
-        </div>
-      ) : !risk ? (
-        <div className="empty-state">
-          <h2>Risk not assessed yet</h2>
-          <p>Execute regression tests first to generate a risk report.</p>
-        </div>
-      ) : (
-        <div className={`risk-card risk-card-${risk.risk_level.toLowerCase()}`}>
-          <div className="risk-heading">
-            <div>
-              <p className="eyebrow">DEMO RISK ASSESSMENT</p>
-              <h2>
-                Risk level{" "}
-                <span className={`risk-${risk.risk_level.toLowerCase()}`}>
-                  {risk.risk_level}
-                </span>
-              </h2>
-            </div>
-            <span className="risk-score">{riskScore}/100</span>
+      <p>Risk assessment returned by the backend workflow.</p>
+      <div className={`risk-card risk-card-${level}`}>
+        <div className="risk-heading">
+          <div>
+            <p className="eyebrow">BACKEND RISK ASSESSMENT</p>
+            <h2>Risk level <span className={`risk-${level}`}>{risk.level}</span></h2>
           </div>
+          <span className="risk-score" aria-label={`Risk score ${risk.score} out of 100`}>{risk.score}/100</span>
+        </div>
 
-          <div className="risk-metrics">
-            <div>
-              <h3>Pass rate</h3>
-              <p>{passPercentage ?? "N/A"}%</p>
-            </div>
-            <div>
-              <h3>Tests failed</h3>
-              <p>{executionResult?.failed ?? 0}</p>
-            </div>
-            <div>
-              <h3>Tests executed</h3>
-              <p>{executionResult?.total_tests ?? 0}</p>
-            </div>
-          </div>
+        <div className="risk-metrics">
+          {(Object.keys(metricLabels) as Array<keyof typeof risk.metrics>).map((key) => (
+            <div key={key}><h3>{metricLabels[key]}</h3><p>{risk.metrics[key]}</p></div>
+          ))}
+        </div>
 
-          <div className="risk-detail">
-            <h3>Assessment</h3>
-            <p>{risk.risk_reason}</p>
-            <p className="risk-calculation">
-              Demo rule: no failures = Low; fewer than half failed = Medium;
-              half or more failed = High.
-            </p>
-          </div>
+        <section className="risk-detail">
+          <h3>Risk factors</h3>
+          {risk.factors.length ? (
+            <ul>{risk.factors.map((factor, index) => <li key={`${factor.name}:${index}`}><strong>{factor.name}</strong> · {factor.points}/{factor.max_points} points — {factor.explanation}</li>)}</ul>
+          ) : <p>No contributing risk factors were reported.</p>}
+        </section>
 
+        {risk.safety_overrides.length > 0 && (
+          <section className="error" aria-label="Risk safety overrides">
+            <h3>Safety overrides</h3>
+            <ul>{risk.safety_overrides.map((override, index) => <li key={`${override}:${index}`}>{override}</li>)}</ul>
+          </section>
+        )}
+
+        <div className="recommendation">
+          <strong>Backend recommendation</strong>
+          <p>{risk.recommendation}</p>
+        </div>
+        {report.recommendations.length > 0 && (
           <div className="recommendation">
-            <strong>Suggested next step</strong>
-            <p>{risk.deployment_recommendation}</p>
+            <strong>Report recommendations</strong>
+            <ul>{report.recommendations.map((recommendation, index) => <li key={`${recommendation}:${index}`}>{recommendation}</li>)}</ul>
           </div>
-          <p className="risk-disclaimer">
-            This sample assessment is not a release approval. A human reviewer
-            should make the final deployment decision.
-          </p>
-        </div>
-      )}
+        )}
+        <p className="field-note">Verification status: <strong>{risk.verification_status}</strong></p>
+        {verified && <p className="success-message" role="status">The backend marked verification as successful.</p>}
+        {!verified && <p className="field-note">The workflow has not marked verification successful.</p>}
+      </div>
     </section>
   );
 }

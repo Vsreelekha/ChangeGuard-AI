@@ -9,11 +9,14 @@ from fastapi.responses import JSONResponse
 from app.core.config import get_settings
 from app.core.exceptions import ChangeGuardException
 from app.core.logging_config import logger, setup_logging
+from app.core.upload_limit import MULTIPART_REQUEST_OVERHEAD_BYTES, ProjectUploadLimitMiddleware
 from app.database.connection import init_db
 from app.routes.analysis import router as analysis_router
 from app.routes.execution import router as execution_router
 from app.routes.reports import router as reports_router
 from app.routes.testing import router as testing_router
+from app.routes.projects import router as projects_router
+from app.services.project_workspace_service import ProjectWorkspaceService
 
 settings = get_settings()
 
@@ -24,6 +27,14 @@ async def lifespan(app: FastAPI):
     setup_logging(settings.LOG_LEVEL)
     logger.info("Initializing ChangeGuard AI backend services...")
     init_db()
+    try:
+        removed = ProjectWorkspaceService().cleanup_expired_workspaces()
+        if removed:
+            logger.info("Removed %s expired or incomplete project workspace(s).", removed)
+    except Exception as exc:
+        # Upload support is opt-in; existing API routes remain available when
+        # its dedicated private workspace has not been configured.
+        logger.warning("Project workspace cleanup was unavailable: %s", exc)
     yield
     logger.info("ChangeGuard AI backend shutdown complete.")
 
@@ -50,6 +61,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    ProjectUploadLimitMiddleware,
+    path=f"{settings.API_V1_STR}/projects",
+    max_request_bytes=settings.PROJECT_UPLOAD_MAX_BYTES + MULTIPART_REQUEST_OVERHEAD_BYTES,
+    max_concurrent_uploads=settings.PROJECT_UPLOAD_MAX_CONCURRENT,
 )
 
 
@@ -122,6 +139,7 @@ app.include_router(analysis_router, prefix=settings.API_V1_STR)
 app.include_router(testing_router, prefix=settings.API_V1_STR)
 app.include_router(execution_router, prefix=settings.API_V1_STR)
 app.include_router(reports_router, prefix=settings.API_V1_STR)
+app.include_router(projects_router, prefix=settings.API_V1_STR)
 
 
 if __name__ == "__main__":

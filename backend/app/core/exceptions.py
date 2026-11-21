@@ -23,6 +23,21 @@ class InvalidInputError(ChangeGuardException):
         super().__init__(message=message, status_code=400, details=details)
 
 
+class UploadTooLargeError(InvalidInputError):
+    """Raised when an upload or extracted archive exceeds a configured byte cap."""
+
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message=message, details=details)
+        self.status_code = 413
+
+
+class WorkspaceQuotaError(ChangeGuardException):
+    """Raised when aggregate workspace storage or upload capacity is exhausted."""
+
+    def __init__(self, message: str):
+        super().__init__(message=message, status_code=429)
+
+
 class AnalyzerIntegrationError(ChangeGuardException):
     """Raised when teammate's code analyzer module is unavailable or errors out."""
 

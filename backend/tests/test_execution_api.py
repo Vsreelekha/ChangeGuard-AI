@@ -101,13 +101,14 @@ def test_docker_command_security_flags():
     cmd = runner._build_docker_command(Path("."), ["test_sample"])
     assert "docker" in cmd[0]
     assert "--user" in cmd and "1000:1000" in cmd
+    assert "--env" in cmd and cmd[cmd.index("--env") + 1] == "PYTHONPATH=/app"
     assert "--network" in cmd and "none" in cmd
     assert "--memory" in cmd
     assert "--cpus" in cmd
     assert "--pids-limit" in cmd
     assert "--read-only" in cmd
     assert any(":ro" in arg for arg in cmd)
-    assert "pytest" in cmd
+    assert cmd[-5:] == ["pytest", "-q", "-o", "cache_dir=/tmp/.pytest_cache", "test_sample"]
 
 
 def test_test_execution_rejects_path_traversal(client: TestClient, tmp_path, monkeypatch):

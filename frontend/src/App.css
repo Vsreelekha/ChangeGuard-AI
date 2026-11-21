@@ -227,12 +227,42 @@
   font-weight: 600;
 }
 
+.backend-status-connected {
+  border-color: #bce3ce;
+  background: #f2fbf6;
+  color: #21744c;
+}
+
+.backend-status-disconnected {
+  border-color: #f1c3c3;
+  background: #fff6f6;
+  color: #a93838;
+}
+
+.backend-status-checking {
+  border-color: #d5dfef;
+  background: #f7f9fc;
+  color: #53627a;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: #db982e;
+}
+
+.backend-status-connected .status-dot {
+  background: #28a36a;
+}
+
+.backend-status-disconnected .status-dot {
+  background: #d65151;
+}
+
+.backend-status-checking .status-dot {
+  background: #7790b5;
 }
 
 .stats-grid {

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from app.integrations.analyzer_adapter import CodeAnalyzerAdapter
 from app.core.exceptions import TestExecutionTimeoutError
+from app.database.models import AnalysisRun
 from app.services.test_runner_service import TestRunnerService
 
 
@@ -112,12 +113,64 @@ def test_full_workflow_run_endpoint(client: TestClient, tmp_path, monkeypatch):
     assert response.status_code == 201, response.text
     data = response.json()
     assert data["impact_analysis"]["changed_functions"][0]["nested"]["evidence"] == ["line 2"]
+    assert str(project.resolve()) not in response.text
+    assert data["impact_analysis"]["changed_functions"][0]["file_path"] == "billing.py"
     assert data["workflow_report"]["risk"]["verification_status"] == "VERIFIED"
     assert data["workflow_report"]["verification_success"] is True
     assert data["tests"]["passed"] == 1
     retrieved = client.get(f"/api/v1/reports/{data['run_id']}").json()
+    assert str(project.resolve()) not in retrieved.__str__()
     assert retrieved["impact_analysis"] == data["impact_analysis"]
     assert retrieved["workflow_report"]["test_selection"]["selected_tests"][0]["test_name"] == "test_calculate_total"
+
+
+def test_get_legacy_report_redacts_filesystem_paths(client, db_session, tmp_path):
+    """Old rows are sanitized at serialization time without mutating persistence."""
+    project_root = tmp_path / "legacy project"
+    absolute_file = str(project_root / "src" / "module.py")
+    db_session.add(
+        AnalysisRun(
+            run_id="legacy-path-report",
+            changed_functions=[{
+                "id": f"{absolute_file}:calculate",
+                "file_path": absolute_file,
+            }],
+            impacted_functions=[],
+            impacted_modules=[absolute_file],
+            selected_tests=[],
+            test_results={
+                "total_tests": 0,
+                "passed": 0,
+                "failed": 0,
+                "failures": [],
+            },
+            impact_analysis={
+                "changed_functions": [{"file_path": absolute_file}],
+                "errors": [{"file_path": absolute_file, "error": f"Could not read {absolute_file}"}],
+            },
+            workflow_report={
+                "metadata": {"project_path": str(project_root)},
+                "test_execution": {"stdout": f"failed in {absolute_file}"},
+            },
+            risk_level="MEDIUM",
+            recommendations=[
+                f"Review {absolute_file}",
+                "Diagnostic at C:\\private data\\internal.py",
+            ],
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/reports/legacy-path-report")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert str(project_root) not in response.text
+    assert "project_path" not in body["workflow_report"]["metadata"]
+    assert body["changed_functions"][0]["file_path"].replace("\\", "/") == "src/module.py"
+    assert body["impact_analysis"]["changed_functions"][0]["file_path"].replace("\\", "/") == "src/module.py"
+    assert body["workflow_report"]["test_execution"]["stdout"].replace("\\", "/") == "failed in src/module.py"
+    assert "C:\\private data" not in response.text
 
 
 def test_workflow_requires_project_path(client: TestClient):

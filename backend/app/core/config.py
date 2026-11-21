@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import List
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +34,21 @@ class Settings(BaseSettings):
     DOCKER_PIDS_LIMIT: int = 100
     # Must be explicitly configured as a JSON list of absolute directory paths.
     APPROVED_PROJECT_ROOTS: List[str] = []
+
+    # Private server-side workspaces for uploaded projects. This must be an
+    # existing directory inside one of APPROVED_PROJECT_ROOTS and outside any
+    # publicly served directory.
+    PROJECT_WORKSPACE_ROOT: str = ""
+    PROJECT_UPLOAD_MAX_BYTES: int = Field(default=50 * 1024 * 1024, gt=0)
+    PROJECT_EXTRACTED_MAX_BYTES: int = Field(default=250 * 1024 * 1024, gt=0)
+    PROJECT_FILE_MAX_BYTES: int = Field(default=25 * 1024 * 1024, gt=0)
+    PROJECT_ARCHIVE_MAX_FILES: int = Field(default=10_000, gt=0)
+    PROJECT_ARCHIVE_MAX_ENTRIES: int = Field(default=10_000, gt=0)
+    PROJECT_ARCHIVE_MAX_DEPTH: int = Field(default=32, gt=0)
+    PROJECT_WORKSPACE_TTL_HOURS: int = Field(default=24, gt=0)
+    PROJECT_STAGING_TTL_HOURS: int = Field(default=24, gt=0)
+    PROJECT_WORKSPACE_MAX_BYTES: int = Field(default=2 * 1024 * 1024 * 1024, gt=0)
+    PROJECT_UPLOAD_MAX_CONCURRENT: int = Field(default=2, gt=0)
 
     # Integration flags / settings
     ANALYZER_MODULE_ENABLED: bool = True

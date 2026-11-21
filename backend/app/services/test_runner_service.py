@@ -212,6 +212,9 @@ class TestRunnerService:
         return [
             "docker", "run", "--rm",
             "--user", "1000:1000",
+            "--env", "PYTHONPATH=/app",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges:true",
             "--network", "none",
             "--memory", settings.DOCKER_MEMORY_LIMIT,
             "--cpus", str(settings.DOCKER_CPU_LIMIT),

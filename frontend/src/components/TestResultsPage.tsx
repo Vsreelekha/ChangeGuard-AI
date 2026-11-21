@@ -1,75 +1,75 @@
-import type { TestExecutionResult } from "../services/api";
-import type { WorkflowStageStatus } from "./WorkflowStatus";
+import type { ReportResponse, WorkflowTestExecution } from "../services/api";
+import { displayStatus } from "../utils/displayStatus";
+import WorkflowInProgress from "./WorkflowInProgress";
 
-type Props = {
-  result: TestExecutionResult | null;
-  status: WorkflowStageStatus;
-};
+type Props = { report: ReportResponse | null; loading: boolean };
 
-function TestResultsPage({ result, status }: Props) {
+function TestResultsPage({ report, loading }: Props) {
+  const execution = report?.workflow_report.test_execution;
+  if (loading) {
+    return <section className="page-container test-results-page"><h1>Test Results</h1><WorkflowInProgress /></section>;
+  }
+  if (!execution) {
+    return <section className="page-container test-results-page"><h1>Test Results</h1><div className="empty-state"><h2>No test results yet</h2><p>Run the uploaded-project workflow to see backend test execution results.</p></div></section>;
+  }
   return (
     <section className="page-container test-results-page">
       <h1>Test Results</h1>
-      <p>View the results of your regression test execution.</p>
-      <div className="demo-notice">
-        DEMO MODE — Results are generated from the local sample test set.
+      <p>Execution status: <strong>{displayStatus(execution.status)}</strong> · {execution.execution_time.toFixed(2)} seconds</p>
+      <ExecutionDetails execution={execution} />
+    </section>
+  );
+}
+
+export function ExecutionDetails({ execution }: { execution: WorkflowTestExecution }) {
+  const { summary } = execution;
+  const status = execution.status.trim().toLowerCase();
+  const counts = [summary.total, summary.passed, summary.failed, summary.skipped, summary.errors];
+  const countsAreValid = counts.every((count) => Number.isInteger(count) && count >= 0);
+  const allPassed = status === "passed" && countsAreValid && summary.total > 0 &&
+    summary.passed === summary.total && summary.failed === 0 && summary.skipped === 0 &&
+    summary.errors === 0 &&
+    summary.total === summary.passed + summary.failed + summary.skipped + summary.errors &&
+    execution.failures.length === 0 && execution.exit_code === 0;
+  return (
+    <>
+      <div className="result-summary">
+        <div className="result-card"><h3>Total</h3><p>{summary.total}</p></div>
+        <div className="result-card"><h3>Passed</h3><p className="metric-success">{summary.passed}</p></div>
+        <div className="result-card"><h3>Failed</h3><p className={summary.failed > 0 ? "metric-danger" : ""}>{summary.failed}</p></div>
+        <div className="result-card"><h3>Skipped</h3><p>{summary.skipped}</p></div>
+        <div className="result-card"><h3>Errors</h3><p className={summary.errors > 0 ? "metric-danger" : ""}>{summary.errors}</p></div>
       </div>
 
-      {status === "In Progress" ? (
-        <div className="loading-container" role="status" aria-live="polite">
-          <div className="spinner" aria-hidden="true"></div>
-          <p>Running demo tests...</p>
-        </div>
-      ) : status === "Failed" ? (
-        <div className="error" role="alert">
-          <h2>Test run did not complete</h2>
-          <p>Return to Test Selection and try running the selected tests again.</p>
-        </div>
-      ) : !result ? (
-        <div className="empty-state">
-          <h2>No test results yet</h2>
-          <p>Select regression tests and run them to see the results here.</p>
-        </div>
+      {status === "timeout" ? (
+        <div className="error" role="status"><h2>Test execution timed out</h2><p>{execution.message || "The backend stopped the test run after its time limit."}</p></div>
+      ) : status === "skipped" ? (
+        <div className="empty-inline" role="status"><strong>Test execution was skipped.</strong> {execution.message}</div>
+      ) : status === "error" || status === "failed" ? (
+        <div className="error" role="status"><h2>Test execution {status}</h2><p>{execution.message}</p></div>
+      ) : allPassed ? (
+        <div className="success-message" role="status">All {summary.total} selected test(s) passed.</div>
+      ) : status === "passed" ? (
+        <div className="error" role="status"><h2>Execution evidence is incomplete or inconsistent</h2><p>The backend reported a passed status, but the counts, failure details, or exit code do not confirm that every selected test passed.</p></div>
       ) : (
-        <>
-          <div className="success-message" role="status">
-            Demo test run completed.
-          </div>
-          <div className="result-summary">
-            <div className="result-card">
-              <h3>Total Tests</h3>
-              <p>{result.total_tests}</p>
-            </div>
-
-            <div className="result-card">
-              <h3>Passed</h3>
-              <p className="metric-success">{result.passed}</p>
-            </div>
-
-            <div className="result-card">
-              <h3>Failed</h3>
-              <p className={result.failed > 0 ? "metric-danger" : ""}>
-                {result.failed}
-              </p>
-            </div>
-          </div>
-
-          <div className="failed-tests">
-            <h2>Failed Tests</h2>
-
-            {result.failures.length === 0 ? (
-              <p className="all-passed">All tests passed successfully.</p>
-            ) : (
-              <ul>
-                {result.failures.map((testName) => (
-                  <li key={testName}>{testName}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </>
+        <div className="empty-inline" role="status">Execution status was not recognized: {execution.status || "missing"}. Use the counts and output below to review the run.</div>
       )}
-    </section>
+
+      <section className="failed-tests">
+        <h2>Failure details</h2>
+        {execution.failures.length === 0 ? <p>No failure details were reported.</p> : (
+          <ul>{execution.failures.map((failure, index) => <li key={`${failure.test}:${index}`}><strong>{failure.test}</strong>{failure.message && <p>{failure.message}</p>}</li>)}</ul>
+        )}
+      </section>
+      {(execution.stdout || execution.stderr) && (
+        <details className="content-card">
+          <summary>Execution output</summary>
+          {execution.stdout && <><h3>Standard output</h3><pre>{execution.stdout}</pre></>}
+          {execution.stderr && <><h3>Standard error</h3><pre>{execution.stderr}</pre></>}
+        </details>
+      )}
+      {execution.exit_code !== null && <p className="field-note">Process exit code: {execution.exit_code}</p>}
+    </>
   );
 }
 

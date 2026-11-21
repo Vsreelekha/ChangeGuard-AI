@@ -1,198 +1,145 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
-
-import { analyzeCode, type AnalysisResult } from "../services/api";
-
-import type { WorkflowStageStatus } from "./WorkflowStatus";
-import AnalysisResults from "./AnalysisResults";
+import type { ProjectUploadResponse } from "../services/api";
 
 type Props = {
-  onAnalysisComplete: (result: AnalysisResult | null) => void;
-  onAnalysisStatusChange: (status: WorkflowStageStatus) => void;
+  gitDiff: string;
+  onDiffChange: (diff: string) => void;
+  onSubmit: (zipFile: File, diff: string) => Promise<void>;
+  onClear: () => void;
+  loading: boolean;
+  phase: "uploading" | "running" | null;
+  error: string | null;
+  uploadMetadata: ProjectUploadResponse | null;
+  projectId: string | null;
 };
 
-function CodeSubmission({ onAnalysisComplete, onAnalysisStatusChange }: Props) {
-  const [diff, setDiff] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [progressStage, setProgressStage] = useState(0);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+function CodeSubmission({
+  gitDiff,
+  onDiffChange,
+  onSubmit,
+  onClear,
+  loading,
+  phase,
+  error,
+  uploadMetadata,
+  projectId,
+}: Props) {
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [diffFileName, setDiffFileName] = useState("");
+  const [validationError, setValidationError] = useState("");
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleZipChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setValidationError("");
+    if (file && !file.name.toLowerCase().endsWith(".zip")) {
+      setZipFile(null);
+      setValidationError("Choose a ZIP archive containing the Python project.");
+      event.target.value = "";
+      return;
+    }
+    setZipFile(file);
+  }
+
+  function handleDiffFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-
     if (!file) return;
-
-    setFileName(file.name);
-    setError("");
-    setSuccess("");
-    setResult(null);
-    setDiff("");
-    onAnalysisComplete(null);
-    onAnalysisStatusChange("Pending");
-
+    setValidationError("");
+    setDiffFileName(file.name);
     const reader = new FileReader();
-
-    reader.onload = () => {
-      setDiff(String(reader.result ?? ""));
-    };
-
-    reader.onerror = () => {
-      setError("Unable to read the selected file.");
-    };
-
+    reader.onload = () => onDiffChange(String(reader.result ?? ""));
+    reader.onerror = () => setValidationError("Unable to read the selected diff file.");
     reader.readAsText(file);
   }
 
-  function handleDiffChange(value: string) {
-    setDiff(value);
-    setResult(null);
-    setError("");
-    setSuccess("");
-    onAnalysisComplete(null);
-    onAnalysisStatusChange("Pending");
-  }
-
   async function handleSubmit() {
-    if (!diff.trim()) {
-      setError("Please upload or paste a Git diff first.");
-      setSuccess("");
+    if (!zipFile) {
+      setValidationError("Choose a project ZIP file first.");
       return;
     }
-
-    setLoading(true);
-    onAnalysisStatusChange("In Progress");
-
-    setProgressStage(1);
-    setError("");
-    setSuccess("");
-    setResult(null);
-
-    try {
-      // Stage 1: Submitting Git diff
-      setProgressStage(1);
-
-      // Stage 2: Waiting for backend analysis
-      setProgressStage(2);
-
-      const data = await analyzeCode(diff);
-
-      // Stage 3: Preparing results
-      setProgressStage(3);
-
-      setResult(data);
-      onAnalysisComplete(data);
-
-      onAnalysisStatusChange("Completed");
-
-      setSuccess("Code analysis completed successfully!");
-    } catch (err) {
-      onAnalysisStatusChange("Failed");
-
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Analysis could not be completed. Please try again.");
-      }
-    } finally {
-      setLoading(false);
-      setProgressStage(0);
+    if (!gitDiff.trim()) {
+      setValidationError("Choose a diff file or paste the Git diff contents.");
+      return;
     }
+    setValidationError("");
+    await onSubmit(zipFile, gitDiff);
   }
 
   function handleClear() {
-    setDiff("");
-    setFileName("");
-    setResult(null);
-    setError("");
-    setSuccess("");
-    setProgressStage(0);
-    onAnalysisComplete(null);
-    onAnalysisStatusChange("Pending");
+    setZipFile(null);
+    setDiffFileName("");
+    setValidationError("");
+    onClear();
   }
 
   return (
     <section className="submission">
       <div className="section-heading">
         <div>
-          <h2>Submit code changes</h2>
-          <p>Upload a Git diff or paste its contents to start the workflow.</p>
+          <h2>Submit a project change</h2>
+          <p>The project is uploaded to a temporary server workspace and analyzed there.</p>
         </div>
-        <span className="demo-pill">DEMO MODE</span>
+        <span className="count-badge">Python ZIP</span>
       </div>
 
       <label className="file-picker">
-        <span>Choose a diff file</span>
-        <span className="file-picker-hint">{fileName || ".diff, .patch, .txt"}</span>
+        <span>Choose a Python project ZIP</span>
+        <span className="file-picker-hint">{zipFile?.name ?? ".zip"}</span>
+        <input
+          type="file"
+          accept=".zip,application/zip"
+          onChange={handleZipChange}
+          disabled={loading}
+          aria-label="Choose a Python project ZIP file"
+        />
+      </label>
+
+      <label className="file-picker diff-file-picker">
+        <span>Choose a Git diff file (optional)</span>
+        <span className="file-picker-hint">{diffFileName || ".diff, .patch, .txt"}</span>
         <input
           type="file"
           accept=".diff,.patch,.txt"
-          onChange={handleFileChange}
+          onChange={handleDiffFileChange}
           disabled={loading}
           aria-label="Choose a Git diff file"
         />
       </label>
 
       <textarea
-        value={diff}
-        onChange={(event) => handleDiffChange(event.target.value)}
-        placeholder="Paste your Git diff content here..."
+        value={gitDiff}
+        onChange={(event) => onDiffChange(event.target.value)}
+        placeholder="Paste the Git diff contents here..."
         rows={12}
         disabled={loading}
         aria-label="Git diff contents"
       />
-
-      <p className="field-note">
-        Demo analysis uses sample results. Your diff is not sent to a backend.
-      </p>
+      <p className="field-note">The ZIP and diff are sent to the configured ChangeGuard backend.</p>
 
       <div className="submission-actions">
         <button type="button" onClick={handleSubmit} disabled={loading}>
-          {loading ? "Analyzing..." : "Analyze Code Changes"}
+          {phase === "uploading" ? "Uploading project..." : phase === "running" ? "Running workflow..." : "Upload and analyze"}
         </button>
-
-        <button type="button" onClick={handleClear} disabled={loading}>
-          Clear
-        </button>
+        <button type="button" onClick={handleClear} disabled={loading}>Clear</button>
       </div>
 
       {loading && (
         <div className="loading-container" role="status" aria-live="polite">
-          <div className="spinner" aria-hidden="true"></div>
-          <p>
-            {progressStage === 1 && "Preparing demo analysis..."}
-            {progressStage === 2 && "Analyzing code changes..."}
-            {progressStage === 3 && "Preparing results..."}
-          </p>
+          <div className="spinner" aria-hidden="true" />
+          <p>{phase === "uploading" ? "Uploading and validating the project archive..." : "Analyzing changes and running selected tests..."}</p>
         </div>
       )}
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
+      {(validationError || error) && (
+        <p className="error" role="alert">{validationError || error}</p>
+      )}
+
+      {uploadMetadata && projectId && (
+        <p className="field-note" role="status">
+          Project uploaded ({uploadMetadata.file_count} files). Temporary project ID: <code>{projectId}</code>.
+          {error ? " The workflow request did not return a report; start a new analysis to submit again." : ""}
         </p>
       )}
-
-      {error && diff.trim() && (
-        <button
-          className="button-secondary retry-button"
-          type="button"
-          onClick={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? "Retrying..." : "Retry Analysis"}
-        </button>
-      )}
-
-      {success && (
-        <p className="success-message" role="status">
-          {success}
-        </p>
-      )}
-
-      {result && <AnalysisResults result={result} />}
     </section>
   );
 }
